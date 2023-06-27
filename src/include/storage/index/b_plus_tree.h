@@ -10,14 +10,19 @@
 //===----------------------------------------------------------------------===//
 #pragma once
 
+#include <deque>
+#include <memory>
 #include <queue>
 #include <string>
+#include <utility>
 #include <vector>
 
+#include "common/config.h"
 #include "concurrency/transaction.h"
 #include "storage/index/index_iterator.h"
 #include "storage/page/b_plus_tree_internal_page.h"
 #include "storage/page/b_plus_tree_leaf_page.h"
+#include "storage/page/b_plus_tree_page.h"
 
 namespace bustub {
 
@@ -45,8 +50,32 @@ class BPlusTree {
   // Returns true if this B+ tree has no keys and values.
   auto IsEmpty() const -> bool;
 
+  auto GetPosOnInternalPage(InternalPage *page, const KeyType &key) const -> int;
+
+  auto GetPosOnLeafPage(BPlusTreeLeafPage<KeyType, ValueType, KeyComparator> *page, const KeyType &key) const -> int;
+
+  enum class FindType { kSearch, kInsert, kDelete };
+  enum class BoundaryType { kNormal, kLeftMost, kRightMost };
+
+  auto FindLeaf(const KeyType &key, FindType type, Transaction *transaction = nullptr,
+                BoundaryType boundary = BoundaryType::kNormal) -> Page *;
+
+  void ReleaseQueueLatch(Transaction *transaction);
+
+  void InsertIntoParent(BPlusTreePage *node, const KeyType &key, BPlusTreePage *new_node, Transaction *transaction);
+
   // Insert a key-value pair into this B+ tree.
   auto Insert(const KeyType &key, const ValueType &value, Transaction *transaction = nullptr) -> bool;
+
+  template <typename NodeType>
+  auto CoalesceOrRedistribute(NodeType *node, Transaction *transaction) -> bool;
+
+  template <typename NodeType>
+  auto Coalesce(NodeType *left_node, NodeType *right_node, InternalPage *parent, int pos, Transaction *transaction)
+      -> bool;
+
+  template <typename NodeType>
+  void Redistribute(NodeType *left_node, NodeType *right_node, InternalPage *parent, int right_pos, bool from_previous);
 
   // Remove a key and its value from this B+ tree.
   void Remove(const KeyType &key, Transaction *transaction = nullptr);
@@ -89,6 +118,7 @@ class BPlusTree {
   KeyComparator comparator_;
   int leaf_max_size_;
   int internal_max_size_;
+  ReaderWriterLatch root_latch_;
 };
 
 }  // namespace bustub

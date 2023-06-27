@@ -11,6 +11,7 @@
 //===----------------------------------------------------------------------===//
 
 #include <algorithm>
+#include <cstdint>
 #include <cstdio>
 
 #include "buffer/buffer_pool_manager_instance.h"
@@ -20,7 +21,7 @@
 
 namespace bustub {
 
-TEST(BPlusTreeTests, DISABLED_DeleteTest1) {
+TEST(BPlusTreeTests, DeleteTest1) {
   // create KeyComparator and index schema
   auto key_schema = ParseCreateStatement("a bigint");
   GenericComparator<8> comparator(key_schema.get());
@@ -92,7 +93,7 @@ TEST(BPlusTreeTests, DISABLED_DeleteTest1) {
   remove("test.log");
 }
 
-TEST(BPlusTreeTests, DISABLED_DeleteTest2) {
+TEST(BPlusTreeTests, DeleteTest2) {
   // create KeyComparator and index schema
   auto key_schema = ParseCreateStatement("a bigint");
   GenericComparator<8> comparator(key_schema.get());
@@ -153,6 +154,89 @@ TEST(BPlusTreeTests, DISABLED_DeleteTest2) {
       size = size + 1;
     }
   }
+
+  EXPECT_EQ(size, 1);
+
+  bpm->UnpinPage(HEADER_PAGE_ID, true);
+  delete transaction;
+  delete disk_manager;
+  delete bpm;
+  remove("test.db");
+  remove("test.log");
+}
+
+TEST(BPlusTreeTests, DeleteTest42) {
+  // create KeyComparator and index schema
+  auto key_schema = ParseCreateStatement("a bigint");
+  GenericComparator<8> comparator(key_schema.get());
+
+  auto *disk_manager = new DiskManager("test.db");
+  BufferPoolManager *bpm = new BufferPoolManagerInstance(50, disk_manager);
+  // create b+ tree
+  BPlusTree<GenericKey<8>, RID, GenericComparator<8>> tree("foo_pk", bpm, comparator, 3, 3);
+  GenericKey<8> index_key;
+  RID rid;
+  // create transaction
+  auto *transaction = new Transaction(0);
+
+  // create and fetch header_page
+  page_id_t page_id;
+  auto header_page = bpm->NewPage(&page_id);
+  (void)header_page;
+
+  int64_t test_range = 14;
+  std::vector<int64_t> keys;
+  for (int64_t i = 0; i < test_range; ++i) {
+    keys.push_back(i);
+  }
+
+  for (auto key : keys) {
+    int64_t value = key & 0xFFFFFFFF;
+    rid.Set(static_cast<int32_t>(key >> 32), value);
+    index_key.SetFromInteger(key);
+    tree.Insert(index_key, rid, transaction);
+  }
+
+  std::vector<RID> rids;
+  std::vector<int64_t> remove_keys;
+  for (int64_t i = 1; i < test_range; ++i) {
+    remove_keys.push_back(i);
+  }
+
+  for (auto key : remove_keys) {
+    index_key.SetFromInteger(key);
+    tree.Remove(index_key, transaction);
+  }
+
+  // std::cout << "Test42?" << std::endl;
+
+  int64_t size = 0;
+  bool is_present;
+
+  for (auto key : keys) {
+    // std::cout << "-- Test42 - 1" << std::endl;
+    rids.clear();
+    index_key.SetFromInteger(key);
+    // std::cout << "-- Test42 - 2" << std::endl;
+    is_present = tree.GetValue(index_key, &rids);
+
+    // if (key != 0 && is_present) {
+    //   std::cout << "Error" << std::endl;
+    //   return;
+    // }
+    // std::cout << "-- Test42 - 3" << std::endl;
+
+    if (!is_present) {
+      EXPECT_NE(std::find(remove_keys.begin(), remove_keys.end(), key), remove_keys.end());
+    } else {
+      EXPECT_EQ(rids.size(), 1);
+      EXPECT_EQ(rids[0].GetPageId(), 0);
+      EXPECT_EQ(rids[0].GetSlotNum(), key);
+      size = size + 1;
+    }
+  }
+
+  std::cout << "Test42?" << std::endl;
 
   EXPECT_EQ(size, 1);
 
