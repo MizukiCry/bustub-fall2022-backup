@@ -12,6 +12,7 @@
 
 #include <queue>
 
+#include "buffer/buffer_pool_manager.h"
 #include "storage/page/b_plus_tree_page.h"
 
 namespace bustub {
@@ -41,6 +42,15 @@ class BPlusTreeInternalPage : public BPlusTreePage {
   auto KeyAt(int index) const -> KeyType;
   void SetKeyAt(int index, const KeyType &key);
   auto ValueAt(int index) const -> ValueType;
+  void SetValueAt(int index, const ValueType &value);
+
+  void Insert(int index, const KeyType &key, const ValueType &value);
+  void Delete(int index);
+  void ShiftFrom(B_PLUS_TREE_INTERNAL_PAGE_TYPE *other_page, BufferPoolManager *buffer_pool_manager);
+  void ShiftTo(B_PLUS_TREE_INTERNAL_PAGE_TYPE *other_page, BufferPoolManager *buffer_pool_manager);
+  auto Split(B_PLUS_TREE_INTERNAL_PAGE_TYPE *other_page, KeyType &end_key, ValueType &end_value) -> KeyType;
+  void Merge(B_PLUS_TREE_INTERNAL_PAGE_TYPE *other_page, const KeyType &merge_key,
+             BufferPoolManager *buffer_pool_manager);
 
  private:
   // Flexible array member for page data.
