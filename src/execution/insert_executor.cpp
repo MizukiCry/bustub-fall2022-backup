@@ -18,9 +18,9 @@ namespace bustub {
 
 InsertExecutor::InsertExecutor(ExecutorContext *exec_ctx, const InsertPlanNode *plan,
                                std::unique_ptr<AbstractExecutor> &&child_executor)
-    : AbstractExecutor(exec_ctx), plan_(plan), child_(std::move(child_executor)), first_(true) {}
+    : AbstractExecutor(exec_ctx), plan_(plan), child_executor_(std::move(child_executor)), first_(true) {}
 
-void InsertExecutor::Init() { child_->Init(); }
+void InsertExecutor::Init() { child_executor_->Init(); }
 
 auto InsertExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
   if (!first_) {
@@ -34,7 +34,7 @@ auto InsertExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
   Tuple child_tuple;
 
   int count = 0;
-  while (child_->Next(&child_tuple, rid)) {
+  while (child_executor_->Next(&child_tuple, rid)) {
     if (table_info->table_->InsertTuple(child_tuple, rid, txn)) {
       ++count;
       for (auto index : ctx->GetCatalog()->GetTableIndexes(table_info->name_)) {
