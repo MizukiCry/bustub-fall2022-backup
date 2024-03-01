@@ -45,8 +45,7 @@ class TrieNode {
    * @param other_trie_node Old trie node.
    */
   TrieNode(TrieNode &&other_trie_node) noexcept
-      : key_char_(other_trie_node.key_char_),
-        children_(std::move(other_trie_node.children_)) {}
+      : key_char_(other_trie_node.key_char_), children_(std::move(other_trie_node.children_)) {}
 
   /**
    * @brief Destroy the TrieNode object.
