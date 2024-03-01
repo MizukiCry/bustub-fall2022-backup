@@ -18,10 +18,37 @@ namespace bustub {
 
 InsertExecutor::InsertExecutor(ExecutorContext *exec_ctx, const InsertPlanNode *plan,
                                std::unique_ptr<AbstractExecutor> &&child_executor)
-    : AbstractExecutor(exec_ctx) {}
+    : AbstractExecutor(exec_ctx), plan_(plan), child_(std::move(child_executor)), first_(true) {}
 
-void InsertExecutor::Init() { throw NotImplementedException("InsertExecutor is not implemented"); }
+void InsertExecutor::Init() { child_->Init(); }
 
-auto InsertExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool { return false; }
+auto InsertExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
+  if (!first_) {
+    return false;
+  }
+  first_ = false;
+
+  auto *ctx = GetExecutorContext();
+  auto *txn = ctx->GetTransaction();
+  auto *table_info = ctx->GetCatalog()->GetTable(plan_->TableOid());
+  Tuple child_tuple;
+
+  int count = 0;
+  while (child_->Next(&child_tuple, rid)) {
+    if (table_info->table_->InsertTuple(child_tuple, rid, txn)) {
+      ++count;
+      for (auto index : ctx->GetCatalog()->GetTableIndexes(table_info->name_)) {
+        index->index_->InsertEntry(
+            child_tuple.KeyFromTuple(table_info->schema_, *index->index_->GetKeySchema(), index->index_->GetKeyAttrs()),
+            *rid, txn);
+      }
+    }
+  }
+
+  std::vector<Value> values;
+  values.emplace_back(TypeId::INTEGER, count);
+  *tuple = Tuple{values, &GetOutputSchema()};
+  return true;
+}
 
 }  // namespace bustub
