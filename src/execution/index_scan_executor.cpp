@@ -13,12 +13,12 @@
 
 namespace bustub {
 IndexScanExecutor::IndexScanExecutor(ExecutorContext *exec_ctx, const IndexScanPlanNode *plan)
-    : AbstractExecutor(exec_ctx),
-      plan_(plan),
-      index_info_(GetExecutorContext()->GetCatalog()->GetIndex(plan->GetIndexOid())) {}
+    : AbstractExecutor(exec_ctx), plan_(plan) {}
 
 void IndexScanExecutor::Init() {
+  index_info_ = GetExecutorContext()->GetCatalog()->GetIndex(plan_->GetIndexOid());
   auto *tree = dynamic_cast<BPlusTreeIndexForOneIntegerColumn *>(index_info_->index_.get());
+  rids_.clear();
   for (auto it = tree->GetBeginIterator(); !it.IsEnd(); ++it) {
     rids_.push_back((*it).second);
   }
