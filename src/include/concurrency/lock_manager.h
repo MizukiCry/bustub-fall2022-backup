@@ -64,7 +64,7 @@ class LockManager {
   class LockRequestQueue {
    public:
     /** List of lock requests for the same resource (table or row) */
-    std::list<LockRequest *> request_queue_;
+    std::list<std::shared_ptr<LockRequest>> request_queue_;
     /** For notifying blocked transactions on this rid */
     std::condition_variable cv_;
     /** txn_id of an upgrading transaction (if any) */
@@ -202,6 +202,15 @@ class LockManager {
    *    After a resource is unlocked, lock manager should update the transaction's lock sets
    *    appropriately (check transaction.h)
    */
+
+  [[noreturn]] void AbortTransaction(Transaction *txn, AbortReason abort_reason);
+
+  void UpdateTableLockSet(Transaction *txn, LockMode lock_mode, table_oid_t oid, bool insert);
+
+  void UpdateRowLockSet(Transaction *txn, const std::shared_ptr<LockRequest> &lock_request, bool insert);
+
+  auto GrantLock(const std::shared_ptr<LockRequest> &lock_request,
+                 const std::shared_ptr<LockRequestQueue> &lock_request_queue) -> bool;
 
   /**
    * Acquire a lock on table_oid_t in the given lock_mode.
