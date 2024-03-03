@@ -17,6 +17,7 @@
 #include <list>
 #include <memory>
 #include <mutex>  // NOLINT
+#include <set>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -306,6 +307,8 @@ class LockManager {
    */
   auto RunCycleDetection() -> void;
 
+  auto FindCycle(txn_id_t txn) -> bool;
+
  private:
   /** Fall 2022 */
   /** Structure that holds lock requests for a given table oid */
@@ -323,6 +326,13 @@ class LockManager {
   /** Waits-for graph representation. */
   std::unordered_map<txn_id_t, std::vector<txn_id_t>> waits_for_;
   std::mutex waits_for_latch_;
+
+  std::set<txn_id_t> txn_set_;
+  std::unordered_set<txn_id_t> active_set_;
+  std::unordered_set<txn_id_t> safe_set_;
+
+  std::unordered_map<txn_id_t, table_oid_t> waits_for_oid_;
+  std::unordered_map<txn_id_t, RID> waits_for_rid_;
 };
 
 }  // namespace bustub

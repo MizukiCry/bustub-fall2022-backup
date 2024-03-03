@@ -400,23 +400,127 @@ auto LockManager::UnlockRow(Transaction *txn, const table_oid_t &oid, const RID 
   AbortTransaction(txn, AbortReason::ATTEMPTED_UNLOCK_BUT_NO_LOCK_HELD);
 }
 
-void LockManager::AddEdge(txn_id_t t1, txn_id_t t2) {}
+void LockManager::AddEdge(txn_id_t t1, txn_id_t t2) {
+  waits_for_[t1].push_back(t2);
+  txn_set_.insert(t1);
+  txn_set_.insert(t2);
+}
 
-void LockManager::RemoveEdge(txn_id_t t1, txn_id_t t2) {}
+void LockManager::RemoveEdge(txn_id_t t1, txn_id_t t2) {
+  auto p = std::find(waits_for_[t1].begin(), waits_for_[t1].end(), t2);
+  if (p != waits_for_[t1].end()) {
+    waits_for_[t1].erase(p);
+  }
+}
 
-auto LockManager::HasCycle(txn_id_t *txn_id) -> bool { return false; }
+auto LockManager::HasCycle(txn_id_t *txn_id) -> bool {
+  return std::any_of(txn_set_.begin(), txn_set_.end(), [this, txn_id](txn_id_t txn) {
+    bool res = FindCycle(txn);
+    if (res) {
+      *txn_id = *std::max_element(active_set_.begin(), active_set_.end());
+    }
+    active_set_.clear();
+    return res;
+  });
+}
 
 auto LockManager::GetEdgeList() -> std::vector<std::pair<txn_id_t, txn_id_t>> {
   std::vector<std::pair<txn_id_t, txn_id_t>> edges(0);
+  for (auto &pair : waits_for_) {
+    for (auto t2 : pair.second) {
+      edges.emplace_back(pair.first, t2);
+    }
+  }
   return edges;
 }
 
 void LockManager::RunCycleDetection() {
   while (enable_cycle_detection_) {
     std::this_thread::sleep_for(cycle_detection_interval);
-    {  // TODO(students): detect deadlock
+    {
+      table_lock_map_latch_.lock();
+      row_lock_map_latch_.lock();
+
+      for (auto &[_, lock_request_queue] : table_lock_map_) {
+        std::unordered_set<txn_id_t> granted_set;
+        std::lock_guard<std::mutex> guard(lock_request_queue->latch_);
+        for (auto &lock_request : lock_request_queue->request_queue_) {
+          if (lock_request->granted_) {
+            granted_set.insert(lock_request->txn_id_);
+          } else {
+            for (auto txn_id : granted_set) {
+              waits_for_oid_[lock_request->txn_id_] = lock_request->oid_;
+              AddEdge(lock_request->txn_id_, txn_id);
+            }
+          }
+        }
+      }
+
+      for (auto &[_, lock_request_queue] : row_lock_map_) {
+        std::unordered_set<txn_id_t> granted_set;
+        std::lock_guard<std::mutex> guard(lock_request_queue->latch_);
+        for (auto &lock_request : lock_request_queue->request_queue_) {
+          if (lock_request->granted_) {
+            granted_set.insert(lock_request->txn_id_);
+          } else {
+            for (auto txn_id : granted_set) {
+              waits_for_rid_[lock_request->txn_id_] = lock_request->rid_;
+              AddEdge(lock_request->txn_id_, txn_id);
+            }
+          }
+        }
+      }
+
+      row_lock_map_latch_.unlock();
+      table_lock_map_latch_.unlock();
+
+      for (txn_id_t txn_id; HasCycle(&txn_id);) {
+        TransactionManager::GetTransaction(txn_id)->SetState(TransactionState::ABORTED);
+        waits_for_.erase(txn_id);
+        for (auto next_txn_id : txn_set_) {
+          RemoveEdge(next_txn_id, txn_id);
+        }
+
+        if (waits_for_oid_.find(txn_id) != waits_for_oid_.end()) {
+          table_lock_map_[waits_for_oid_[txn_id]]->latch_.lock();
+          table_lock_map_[waits_for_oid_[txn_id]]->cv_.notify_all();
+          table_lock_map_[waits_for_oid_[txn_id]]->latch_.unlock();
+        }
+
+        if (waits_for_rid_.find(txn_id) != waits_for_rid_.end()) {
+          row_lock_map_[waits_for_rid_[txn_id]]->latch_.lock();
+          row_lock_map_[waits_for_rid_[txn_id]]->cv_.notify_all();
+          row_lock_map_[waits_for_rid_[txn_id]]->latch_.unlock();
+        }
+      }
+
+      waits_for_.clear();
+      safe_set_.clear();
+      txn_set_.clear();
+      waits_for_oid_.clear();
+      waits_for_rid_.clear();
     }
   }
+}
+
+auto LockManager::FindCycle(txn_id_t txn_id) -> bool {
+  if (safe_set_.find(txn_id) != safe_set_.end()) {
+    return false;
+  }
+  if (active_set_.find(txn_id) != active_set_.end()) {
+    return true;
+  }
+  active_set_.insert(txn_id);
+  std::vector<txn_id_t> g = waits_for_[txn_id];
+  std::sort(g.begin(), g.end());
+  for (auto next_txn_id : g) {
+    if (FindCycle(next_txn_id)) {
+      return true;
+    }
+  }
+  active_set_.erase(txn_id);
+  safe_set_.insert(txn_id);
+  return false;
 }
 
 }  // namespace bustub
