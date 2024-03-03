@@ -23,6 +23,11 @@ DeleteExecutor::DeleteExecutor(ExecutorContext *exec_ctx, const DeletePlanNode *
 void DeleteExecutor::Init() {
   child_executor_->Init();
   deleted_ = false;
+  auto ctx = GetExecutorContext();
+  if (!ctx->GetLockManager()->LockTable(ctx->GetTransaction(), LockManager::LockMode::INTENTION_EXCLUSIVE,
+                                        ctx->GetCatalog()->GetTable(plan_->TableOid())->oid_)) {
+    throw ExecutionException("Delete Executor: failed to lock table");
+  }
 }
 
 auto DeleteExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
@@ -38,6 +43,9 @@ auto DeleteExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
 
   int count = 0;
   while (child_executor_->Next(&child_tuple, rid)) {
+    if (!ctx->GetLockManager()->LockRow(txn, LockManager::LockMode::EXCLUSIVE, table_info->oid_, *rid)) {
+      throw ExecutionException("Delete Executor: failed to lock row");
+    }
     if (table_info->table_->MarkDelete(*rid, txn)) {
       ++count;
       for (auto index : ctx->GetCatalog()->GetTableIndexes(table_info->name_)) {

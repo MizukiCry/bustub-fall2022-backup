@@ -23,6 +23,11 @@ InsertExecutor::InsertExecutor(ExecutorContext *exec_ctx, const InsertPlanNode *
 void InsertExecutor::Init() {
   child_executor_->Init();
   first_ = true;
+  auto ctx = GetExecutorContext();
+  if (!ctx->GetLockManager()->LockTable(ctx->GetTransaction(), LockManager::LockMode::INTENTION_EXCLUSIVE,
+                                        ctx->GetCatalog()->GetTable(plan_->TableOid())->oid_)) {
+    throw ExecutionException("Insert Executor: failed to lock table");
+  }
 }
 
 auto InsertExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
@@ -38,6 +43,9 @@ auto InsertExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
 
   int count = 0;
   while (child_executor_->Next(&child_tuple, rid)) {
+    if (!ctx->GetLockManager()->LockRow(txn, LockManager::LockMode::EXCLUSIVE, table_info->oid_, *rid)) {
+      throw ExecutionException("Insert Executor: failed to lock row");
+    }
     if (table_info->table_->InsertTuple(child_tuple, rid, txn)) {
       ++count;
       for (auto index : ctx->GetCatalog()->GetTableIndexes(table_info->name_)) {
